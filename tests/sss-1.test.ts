@@ -15,7 +15,12 @@ import {
   deriveRolesPda,
 } from "@stbr/sss-token";
 
-// ── Test Helpers ──────────────────────────────────────────────────────
+// ── Constants ─────────────────────────────────────────────────────────
+
+const DECIMALS = 6;
+const ONE_TOKEN = 1_000_000;               // 10^DECIMALS
+const DEFAULT_QUOTA = 1_000_000_000;       // 1,000 tokens
+const DEFAULT_MINT_AMOUNT = 100_000_000;   // 100 tokens
 
 /**
  * Generates a new funded keypair for testing.

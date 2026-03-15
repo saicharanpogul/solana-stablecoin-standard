@@ -60,13 +60,9 @@ pub fn handler(ctx: Context<MintTokens>, amount: u64) -> Result<()> {
     let config = &mut ctx.accounts.config;
     let role_manager = &mut ctx.accounts.role_manager;
 
-    // Check not paused
     require!(!config.is_paused, SssError::Paused);
-
-    // Check amount
     require!(amount > 0, SssError::ZeroMintAmount);
 
-    // Check minter authorization and quota
     let minter_key = ctx.accounts.minter.key();
     let minter_entry = role_manager
         .find_minter_mut(&minter_key)
@@ -77,13 +73,11 @@ pub fn handler(ctx: Context<MintTokens>, amount: u64) -> Result<()> {
         SssError::MinterQuotaExceeded
     );
 
-    // Update minter's minted amount
     minter_entry.minted = minter_entry
         .minted
         .checked_add(amount)
         .ok_or(SssError::ArithmeticOverflow)?;
 
-    // Check supply cap (if set)
     let new_total = config
         .total_minted
         .checked_add(amount)
@@ -93,10 +87,8 @@ pub fn handler(ctx: Context<MintTokens>, amount: u64) -> Result<()> {
         require!(new_total <= cap, SssError::SupplyCapExceeded);
     }
 
-    // Update total minted
     config.total_minted = new_total;
 
-    // CPI: Mint tokens
     let config_key = config.mint;
     let bump = config.bump;
     let signer_seeds: &[&[&[u8]]] = &[&[b"config", config_key.as_ref(), &[bump]]];

@@ -109,10 +109,7 @@ pub fn handler(ctx: Context<Seize>) -> Result<()> {
     let bump = config.bump;
     let signer_seeds: &[&[&[u8]]] = &[&[b"config", mint_key.as_ref(), &[bump]]];
 
-    // ── Step 1: Thaw the frozen account ─────────────────────────────
-    //
-    // Token-2022 blocks burns from frozen accounts.
-    // We must thaw first, burn, mint to treasury, then re-freeze.
+    // Must thaw before burn — Token-2022 blocks burns from frozen accounts.
     anchor_lang::solana_program::program::invoke_signed(
         &spl_token_2022::instruction::thaw_account(
             ctx.accounts.token_program.key,
@@ -163,7 +160,6 @@ pub fn handler(ctx: Context<Seize>) -> Result<()> {
         amount,
     )?;
 
-    // ── Step 4: Re-freeze the account ───────────────────────────────
     anchor_lang::solana_program::program::invoke_signed(
         &spl_token_2022::instruction::freeze_account(
             ctx.accounts.token_program.key,

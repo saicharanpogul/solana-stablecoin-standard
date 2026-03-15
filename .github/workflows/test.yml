@@ -94,11 +94,9 @@ jobs:
 
       - name: Rust format check
         run: cargo fmt --all -- --check
-        continue-on-error: true
 
       - name: Clippy
         run: cargo clippy --all-targets -- -D warnings
-        continue-on-error: true
 
   # ── SDK Build ────────────────────────────────────────────────────────
   sdk:

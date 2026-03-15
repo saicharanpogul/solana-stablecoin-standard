@@ -107,29 +107,14 @@ pub struct StablecoinInitialized {
 }
 
 pub fn handler(ctx: Context<Initialize>, params: InitializeParams) -> Result<()> {
-    // ── Step 1: Validate input ──────────────────────────────────────
-    require!(
-        params.name.len() <= 32,
-        crate::errors::SssError::NameTooLong
-    );
-    require!(
-        params.symbol.len() <= 10,
-        crate::errors::SssError::SymbolTooLong
-    );
+    require!(params.name.len() <= 32, crate::errors::SssError::NameTooLong);
+    require!(params.symbol.len() <= 10, crate::errors::SssError::SymbolTooLong);
     require!(params.uri.len() <= 200, crate::errors::SssError::UriTooLong);
 
-    // ── Step 2: Determine which extensions to enable ────────────────
-    //
-    // Token-2022 extensions must be declared at mint creation time.
-    // They can't be added later. This is why feature flags are immutable.
-    //
-    // SSS-1: MetadataPointer + TokenMetadata + MintCloseAuthority
-    // SSS-2: + PermanentDelegate + TransferHook + DefaultAccountState
-    // SSS-3: + ConfidentialTransferMint (experimental)
-
+    // Extensions must be declared at mint creation time and are immutable.
     let mut extension_types: Vec<ExtensionType> = vec![
-        ExtensionType::MetadataPointer,    // Points to on-chain metadata
-        ExtensionType::MintCloseAuthority, // Allows closing the mint to reclaim rent
+        ExtensionType::MetadataPointer,
+        ExtensionType::MintCloseAuthority,
     ];
 
     if params.enable_permanent_delegate {
@@ -148,42 +133,16 @@ pub fn handler(ctx: Context<Initialize>, params: InitializeParams) -> Result<()>
         extension_types.push(ExtensionType::ConfidentialTransferMint);
     }
 
-    // ── Step 3: Calculate mint account size with extensions ──────────
-    //
-    // Token-2022 mints have variable size depending on enabled extensions.
-    // We need to allocate the right amount of space upfront.
-    //
-    // IMPORTANT: token_metadata::initialize will realloc the account to
-    // store metadata (name, symbol, uri). We must pre-fund enough lamports
-    // to cover the final post-metadata size, otherwise the transaction
-    // fails with "insufficient funds for rent".
     let base_space = ExtensionType::try_calculate_account_len::<Mint>(&extension_types)
         .map_err(|_| crate::errors::SssError::InvalidDecimals)?;
 
-    // Calculate the additional space Token-2022 will need for the metadata
-    // TLV entry that gets written during token_metadata::initialize.
-    // Layout: TLV discriminator (8) + length (4) + update_authority (33) +
-    //         mint (32) + name (4+len) + symbol (4+len) + uri (4+len) +
-    //         additional_metadata vec len (4)
-    let metadata_space = 8
-        + 4
-        + 33
-        + 32
-        + (4 + params.name.len())
-        + (4 + params.symbol.len())
-        + (4 + params.uri.len())
-        + 4;
-
-    // Create the account with base_space but fund for the full final size.
-    // Token-2022 handles realloc internally during metadata initialize.
+    // Pre-fund for metadata TLV that token_metadata::initialize will realloc into.
+    let metadata_space = 8 + 4 + 33 + 32
+        + (4 + params.name.len()) + (4 + params.symbol.len()) + (4 + params.uri.len()) + 4;
     let space = base_space;
     let rent = &ctx.accounts.rent;
     let lamports = rent.minimum_balance(base_space + metadata_space);
 
-    // ── Step 4: Create the mint account ─────────────────────────────
-    //
-    // We use invoke (not CPI) to create the account owned by Token-2022.
-    // This is a low-level SystemProgram::CreateAccount call.
     invoke(
         &anchor_lang::solana_program::system_instruction::create_account(
             ctx.accounts.authority.key,
@@ -199,13 +158,7 @@ pub fn handler(ctx: Context<Initialize>, params: InitializeParams) -> Result<()>
         ],
     )?;
 
-    // ── Step 5: Initialize extensions BEFORE InitializeMint ─────────
-    //
-    // CRITICAL: Token-2022 requires extensions to be initialized
-    // BEFORE the mint itself. Order matters!
-
-    // 5a. MetadataPointer — points to the mint itself (self-referential)
-    //     This tells clients "the metadata is on THIS account"
+    // Token-2022 requires extensions initialized BEFORE the mint itself.
     invoke(
         &spl_token_2022::extension::metadata_pointer::instruction::initialize(
             ctx.accounts.token_program.key,
@@ -216,7 +169,7 @@ pub fn handler(ctx: Context<Initialize>, params: InitializeParams) -> Result<()>
         &[ctx.accounts.mint.to_account_info()],
     )?;
 
-    // 5b. MintCloseAuthority — allows the config PDA to close the mint
+
     invoke(
         &token_instruction::initialize_mint_close_authority(
             ctx.accounts.token_program.key,
@@ -226,9 +179,7 @@ pub fn handler(ctx: Context<Initialize>, params: InitializeParams) -> Result<()>
         &[ctx.accounts.mint.to_account_info()],
     )?;
 
-    // 5c. PermanentDelegate (SSS-2) — the config PDA becomes the
-    //     permanent delegate, allowing it to transfer/burn from ANY
-    //     token account. This is what enables the seize instruction.
+    // SSS-2: Config PDA as permanent delegate enables seize.
     if params.enable_permanent_delegate {
         invoke(
             &token_instruction::initialize_permanent_delegate(
@@ -240,9 +191,6 @@ pub fn handler(ctx: Context<Initialize>, params: InitializeParams) -> Result<()>
         )?;
     }
 
-    // 5d. DefaultAccountState (SSS-2) — new accounts start frozen.
-    //     The issuer must explicitly thaw each account before it can
-    //     receive transfers. Standard for compliant stablecoins.
     if params.default_account_frozen {
         invoke(
             &spl_token_2022::extension::default_account_state::instruction::initialize_default_account_state(
@@ -254,10 +202,7 @@ pub fn handler(ctx: Context<Initialize>, params: InitializeParams) -> Result<()>
         )?;
     }
 
-    // 5e. TransferHook (SSS-2) — enables on-transfer validation
-    //     via the transfer-hook program for blacklist enforcement.
     if params.enable_transfer_hook {
-        // Transfer hook program ID — deployed separately
         let transfer_hook_program_id: SolPubkey = "8nWGGHT4kkuvtY8NqXeYEdiyC79qQ2taS82UGwmfdKgu"
             .parse()
             .unwrap();
@@ -272,9 +217,7 @@ pub fn handler(ctx: Context<Initialize>, params: InitializeParams) -> Result<()>
         )?;
     }
 
-    // 5f. ConfidentialTransferMint (SSS-3) — enables private transfer amounts
-    //     Auto-approve mode: new accounts are automatically approved for
-    //     confidential transfers without needing a separate approval tx.
+    // SSS-3: Auto-approve CT — no separate approval tx needed.
     if params.enable_confidential_transfers {
         invoke(
             &spl_token_2022::extension::confidential_transfer::instruction::initialize_mint(
@@ -288,11 +231,7 @@ pub fn handler(ctx: Context<Initialize>, params: InitializeParams) -> Result<()>
         )?;
     }
 
-    // ── Step 6: Initialize the mint itself ───────────────────────────
-    //
-    // The config PDA is both the mint authority and freeze authority.
-    // This means ONLY the program can mint tokens or freeze accounts,
-    // and it will check roles before allowing either operation.
+    // Config PDA as both mint and freeze authority enforces role-based access.
     invoke(
         &token_instruction::initialize_mint2(
             ctx.accounts.token_program.key,
@@ -304,14 +243,7 @@ pub fn handler(ctx: Context<Initialize>, params: InitializeParams) -> Result<()>
         &[ctx.accounts.mint.to_account_info()],
     )?;
 
-    // ── Step 7: Initialize token metadata on the mint ───────────────
-    //
-    // Since we use MetadataPointer pointing to the mint itself,
-    // we store the metadata directly on the mint account using
-    // the TokenMetadata extension. No separate Metaplex account needed!
-    //
-    // We use `spl_token_metadata_interface` — a separate crate from
-    // spl-token-2022 that provides the metadata instruction builders.
+    // Metadata stored directly on-chain via TokenMetadata extension (no Metaplex).
     invoke_signed(
         &spl_token_metadata_interface::instruction::initialize(
             ctx.accounts.token_program.key,
@@ -334,7 +266,7 @@ pub fn handler(ctx: Context<Initialize>, params: InitializeParams) -> Result<()>
         ]],
     )?;
 
-    // ── Step 8: Populate config account ─────────────────────────────
+
 
     let config = &mut ctx.accounts.config;
     config.authority = ctx.accounts.authority.key();
@@ -353,7 +285,7 @@ pub fn handler(ctx: Context<Initialize>, params: InitializeParams) -> Result<()>
     config.supply_cap = params.supply_cap;
     config.bump = ctx.bumps.config;
 
-    // ── Step 9: Populate role manager ───────────────────────────────
+
 
     let role_manager = &mut ctx.accounts.role_manager;
     role_manager.config = config.key();
@@ -365,7 +297,7 @@ pub fn handler(ctx: Context<Initialize>, params: InitializeParams) -> Result<()>
     role_manager.seizer = params.seizer.unwrap_or(ctx.accounts.authority.key());
     role_manager.bump = ctx.bumps.role_manager;
 
-    // ── Step 10: Determine preset name for the event ────────────────
+
 
     let preset = if params.enable_confidential_transfers {
         "SSS-3"

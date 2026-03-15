@@ -104,17 +104,14 @@ pub fn add_handler(ctx: Context<AddToBlacklist>, reason: String) -> Result<()> {
         SssError::ComplianceNotEnabled
     );
 
-    // Check authorization
     require!(
         blacklister_key == role_manager.blacklister
             || blacklister_key == role_manager.master_authority,
         SssError::UnauthorizedBlacklister
     );
 
-    // Validate reason length
     require!(reason.len() <= MAX_REASON_LEN, SssError::ReasonTooLong);
 
-    // Populate blacklist entry
     let blacklist_entry = &mut ctx.accounts.blacklist_entry;
     blacklist_entry.config = config.key();
     blacklist_entry.address = ctx.accounts.address_to_blacklist.key();
@@ -138,13 +135,12 @@ pub fn remove_handler(ctx: Context<RemoveFromBlacklist>) -> Result<()> {
     let role_manager = &ctx.accounts.role_manager;
     let blacklister_key = ctx.accounts.blacklister.key();
 
-    // Feature gate: compliance must be enabled
+    // SSS-2 required
     require!(
         config.is_compliance_enabled(),
         SssError::ComplianceNotEnabled
     );
 
-    // Check authorization
     require!(
         blacklister_key == role_manager.blacklister
             || blacklister_key == role_manager.master_authority,
