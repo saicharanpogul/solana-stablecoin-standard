@@ -107,8 +107,14 @@ pub struct StablecoinInitialized {
 }
 
 pub fn handler(ctx: Context<Initialize>, params: InitializeParams) -> Result<()> {
-    require!(params.name.len() <= 32, crate::errors::SssError::NameTooLong);
-    require!(params.symbol.len() <= 10, crate::errors::SssError::SymbolTooLong);
+    require!(
+        params.name.len() <= 32,
+        crate::errors::SssError::NameTooLong
+    );
+    require!(
+        params.symbol.len() <= 10,
+        crate::errors::SssError::SymbolTooLong
+    );
     require!(params.uri.len() <= 200, crate::errors::SssError::UriTooLong);
 
     // Extensions must be declared at mint creation time and are immutable.
@@ -137,8 +143,14 @@ pub fn handler(ctx: Context<Initialize>, params: InitializeParams) -> Result<()>
         .map_err(|_| crate::errors::SssError::InvalidDecimals)?;
 
     // Pre-fund for metadata TLV that token_metadata::initialize will realloc into.
-    let metadata_space = 8 + 4 + 33 + 32
-        + (4 + params.name.len()) + (4 + params.symbol.len()) + (4 + params.uri.len()) + 4;
+    let metadata_space = 8
+        + 4
+        + 33
+        + 32
+        + (4 + params.name.len())
+        + (4 + params.symbol.len())
+        + (4 + params.uri.len())
+        + 4;
     let space = base_space;
     let rent = &ctx.accounts.rent;
     let lamports = rent.minimum_balance(base_space + metadata_space);
@@ -168,7 +180,6 @@ pub fn handler(ctx: Context<Initialize>, params: InitializeParams) -> Result<()>
         )?,
         &[ctx.accounts.mint.to_account_info()],
     )?;
-
 
     invoke(
         &token_instruction::initialize_mint_close_authority(
@@ -223,9 +234,9 @@ pub fn handler(ctx: Context<Initialize>, params: InitializeParams) -> Result<()>
             &spl_token_2022::extension::confidential_transfer::instruction::initialize_mint(
                 ctx.accounts.token_program.key,
                 ctx.accounts.mint.key,
-                Some(ctx.accounts.config.key()),  // CT authority = config PDA
-                true,                               // auto_approve_new_accounts
-                None,                               // no auditor ElGamal pubkey
+                Some(ctx.accounts.config.key()), // CT authority = config PDA
+                true,                            // auto_approve_new_accounts
+                None,                            // no auditor ElGamal pubkey
             )?,
             &[ctx.accounts.mint.to_account_info()],
         )?;
@@ -266,8 +277,6 @@ pub fn handler(ctx: Context<Initialize>, params: InitializeParams) -> Result<()>
         ]],
     )?;
 
-
-
     let config = &mut ctx.accounts.config;
     config.authority = ctx.accounts.authority.key();
     config.mint = ctx.accounts.mint.key();
@@ -285,8 +294,6 @@ pub fn handler(ctx: Context<Initialize>, params: InitializeParams) -> Result<()>
     config.supply_cap = params.supply_cap;
     config.bump = ctx.bumps.config;
 
-
-
     let role_manager = &mut ctx.accounts.role_manager;
     role_manager.config = config.key();
     role_manager.master_authority = ctx.accounts.authority.key();
@@ -296,8 +303,6 @@ pub fn handler(ctx: Context<Initialize>, params: InitializeParams) -> Result<()>
     role_manager.blacklister = params.blacklister.unwrap_or(ctx.accounts.authority.key());
     role_manager.seizer = params.seizer.unwrap_or(ctx.accounts.authority.key());
     role_manager.bump = ctx.bumps.role_manager;
-
-
 
     let preset = if params.enable_confidential_transfers {
         "SSS-3"

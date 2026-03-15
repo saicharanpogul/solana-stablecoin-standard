@@ -68,11 +68,7 @@ pub mod oracle_module {
     /// Manually set the price (for localnet testing / manual override).
     ///
     /// On devnet/mainnet, use `refresh_price` to read from Switchboard.
-    pub fn set_price(
-        ctx: Context<SetPrice>,
-        price: i128,
-        decimals: u8,
-    ) -> Result<()> {
+    pub fn set_price(ctx: Context<SetPrice>, price: i128, decimals: u8) -> Result<()> {
         require!(price > 0, OracleError::InvalidPrice);
 
         let oracle_config = &mut ctx.accounts.oracle_config;
@@ -157,7 +153,10 @@ pub mod oracle_module {
 
         let clock = Clock::get()?;
         let age = clock.unix_timestamp - oracle_config.last_price_timestamp;
-        require!(age <= oracle_config.staleness_threshold, OracleError::StaleFeed);
+        require!(
+            age <= oracle_config.staleness_threshold,
+            OracleError::StaleFeed
+        );
         require!(oracle_config.last_price > 0, OracleError::InvalidPrice);
 
         emit!(PriceQueried {
@@ -191,7 +190,10 @@ pub mod oracle_module {
 
         let clock = Clock::get()?;
         let age = clock.unix_timestamp - oracle_config.last_price_timestamp;
-        require!(age <= oracle_config.staleness_threshold, OracleError::StaleFeed);
+        require!(
+            age <= oracle_config.staleness_threshold,
+            OracleError::StaleFeed
+        );
         require!(oracle_config.last_price > 0, OracleError::InvalidPrice);
 
         let price = oracle_config.last_price as u128;
@@ -246,7 +248,7 @@ impl OracleConfig {
         16 +    // last_price (i128)
         8 +     // last_price_timestamp
         1 +     // price_decimals
-        1       // bump
+        1 // bump
     }
 }
 
